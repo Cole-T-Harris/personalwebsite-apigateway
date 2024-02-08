@@ -1,11 +1,10 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import json
 import requests
 import boto3
 import time
-# import pgeocode
-# import geopy.distance
+import geopy.distance
 
 BASE_KROGER_URL = "https://api.kroger.com/v1/"
 SCOPE = ''
@@ -49,18 +48,9 @@ class Store(BaseModel):
     name: str
     address: Address
     geolocation: Geolocation
-    # thumbnail: str
+    # thumbnail: Optional[str]
     hours: Hours
-    # distance: float
-
-    # def to_json(self):
-    #     """Converts the Store object to a JSON-formatted string."""
-    #     return self.json()
-
-    # @classmethod
-    # def from_json(cls, json_str):
-    #     """Creates a Store object from a JSON-formatted string."""
-    #     return cls.parse_raw(json_str)
+    # distance: Optional[float]
     
     def to_dict(self):
         return self.dict()
@@ -83,21 +73,29 @@ class LocationsResponse(BaseModel):
     def to_dict(self):
         return self.dict()
 
-# def get_distance(store, zipcode):
-#     nomi = pgeocode.Nominatim('us')
-#     zipcode_latlong_dataframe = nomi.query_postal_code(zipcode)[['latitude','longitude']]
-#     starting_coordinates = (zipcode_latlong_dataframe['latitude'], zipcode_latlong_dataframe['longitude'])
-#     store_coordinates = (store["geolocation"]["latitude"], store["geolocation"]["longitude"])
-#     distance = geopy.distance.geodesic(starting_coordinates, store_coordinates).miles
-#     return distance
+def get_distance(store, zipcode_lat, zipcode_long):
+    starting_coordinates = (zipcode_lat, zipcode_long)
+    store_coordinates = (store["geolocation"]["latitude"], store["geolocation"]["longitude"])
+    distance = geopy.distance.geodesic(starting_coordinates, store_coordinates).miles
+    return distance
+
+def make_lambda_request(lambda_name, payload):
+    lambda_client = boto3.client('lambda')
+    response = lambda_client.invoke(
+        FunctionName=lambda_name,
+        InvocationType='RequestResponse',
+        Payload=json.dumps(payload)
+    )
+    response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+    return response_payload
     
 def get_oauth_header():
     dynamo_response = dynamoDB_table.get_item(
         Key={'TokenKey': TOKEN_KEY}
     )
-    print(f"DynamoDB Response: {dynamo_response}")
     if (dynamo_response["ResponseMetadata"]["HTTPStatusCode"] != 200):
         print("Failed to store token in database")
+        print(f"DynamoDB Response: {dynamo_response}")
         return {
             'statusCode': 500,
             'body': 'Internal Server Error'
@@ -107,21 +105,14 @@ def get_oauth_header():
     current_time = time.time()
 
     if token_expiration <= current_time:
-        lambda_client = boto3.client('lambda')
-        lambda_function = "kroger-oauth"
         payload = {
             "tokenKey": TOKEN_KEY,
             "scope": SCOPE
         }
-        token_response = lambda_client.invoke(
-            FunctionName=lambda_function,
-            InvocationType='RequestResponse',
-            Payload=json.dumps(payload)
-        )
-        token_payload = json.loads(token_response['Payload'].read().decode('utf-8'))
-        print(f"Oauth Lambda Response: {token_payload}")
-        if (token_payload["statusCode"] != 200):
+        token_payload = make_lambda_request("kroger-oauth", payload)
+        if ("statusCode" not in token_payload or token_payload["statusCode"] != 200):
             print("Failed on invoking oauth token lambda")
+            print(f"Oauth Lambda Response: {token_payload}")
             return {
                 'statusCode': 500,
                 'body': 'Internal Server Error'
@@ -150,10 +141,18 @@ def lambda_handler(event, context):
             'body': 'Internal Server Error'
         }
     stores_response_json = response.json()
-    # for store in stores_response_json['data']:
-    #     store["distance"] = get_distance(store=store, zipcode=location_params.zipcode)
+    
+    payload = {
+        "zipcode": str(zipcode)
+    }
+    zipcode_payload = make_lambda_request("zipcode-latlongcoords", payload)
+    print(f"Zipcode response body: {zipcode_body}")
+    for store in stores_response_json['data']:
+        if "statusCode" in zipcode_payload and zipcode_payload["statusCode"] == 200:
+            store["distance"] = get_distance(store=store, 
+                                             zipcode_lat=zipcode_payload["body"]["latitude"],
+                                             zipcode_long= zipcode_payload["body"]["longitude"])
         # store["thumbnail"] = get_thumbnail(store["chain"], db)
-    print(f"Kroger Locations Request Response: {stores_response_json}")
     locations_response = LocationsResponse(zipcode=zipcode,
                                            radiusInMiles=radiusInMiles,
                                            limit=limit,
