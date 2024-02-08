@@ -151,27 +151,32 @@ def lambda_handler(event, context):
     try:
         response = requests.get(url=locations_url, headers=auth_header)
     except Exception as e:
-        print(f"Failed to obtain OAuth token {str(e)}")
+        print(f"Failed to obtain location info {str(e)}")
         return {
             'statusCode': 500,
             'body': 'Internal Server Error'
         }
     stores_response_json = response.json()
-    
-    payload = {
-        "zipcode": str(zipcode)
+    if "data" in stores_response_json:
+        payload = {
+            "zipcode": str(zipcode)
+        }
+        zipcode_payload = make_lambda_request("zipcode-latlongcoords", payload)
+        for store in stores_response_json['data']:
+            if "statusCode" in zipcode_payload and zipcode_payload["statusCode"] == 200:
+                store["distance"] = get_distance(store=store, 
+                                                zipcode_lat=zipcode_payload["body"]["latitude"],
+                                                zipcode_long= zipcode_payload["body"]["longitude"])
+            store["thumbnail"] = get_thumbnail(store["chain"])
+        locations_response = LocationsResponse(zipcode=zipcode,
+                                            radiusInMiles=radiusInMiles,
+                                            limit=limit,
+                                            stores=stores_response_json['data'])
+        return locations_response.to_dict()
+    print(f"Invalid locations info from kroger {stores_response_json}")
+    return {
+            'statusCode': 500,
+            'body': 'Internal Server Error'
     }
-    zipcode_payload = make_lambda_request("zipcode-latlongcoords", payload)
-    for store in stores_response_json['data']:
-        if "statusCode" in zipcode_payload and zipcode_payload["statusCode"] == 200:
-            store["distance"] = get_distance(store=store, 
-                                             zipcode_lat=zipcode_payload["body"]["latitude"],
-                                             zipcode_long= zipcode_payload["body"]["longitude"])
-        store["thumbnail"] = get_thumbnail(store["chain"])
-    locations_response = LocationsResponse(zipcode=zipcode,
-                                           radiusInMiles=radiusInMiles,
-                                           limit=limit,
-                                           stores=stores_response_json['data'])
-    return locations_response.to_dict()
 
 
