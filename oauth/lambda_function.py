@@ -44,6 +44,7 @@ def lambda_handler(event, context):
         expiration_timestamp = int(expiration_time.timestamp())
         dynamoResponse = dynamoDB_table.put_item(
             Item= {
+                'TokenKey': event["tokenKey"],
                 'scope': event["scope"],
                 'token': token,
                 'expiresIn': expiration_timestamp
@@ -56,11 +57,11 @@ def lambda_handler(event, context):
                 'statusCode': 500,
                 'body': 'Internal Server Error'
             }
-        print(f"Item expires at: {expiration_timestamp}")
     else:
         return None
     return {
-        'statusCode': 200
+        'statusCode': 200,
+        'token': token
     }
 
 def test_lambda_handler():
