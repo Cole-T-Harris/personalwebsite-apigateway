@@ -187,6 +187,9 @@ def lambda_handler(event, context):
             'body': json.dumps(locations_response.to_dict()),
             'headers': {
                 'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': "https://www.coleharris.dev",
+                'Access-Control-Allow-Methods': 'GET',
+                'Access-Control-Allow-Headers': 'Content-Type',
             }
         }
     
