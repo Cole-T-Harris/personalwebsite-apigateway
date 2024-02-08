@@ -159,10 +159,20 @@ def get_oauth_header():
 
 def lambda_handler(event, context):
     print("received event: " + json.dumps(event, indent=2))
-    term = event["term"]
-    location_id = event["locationId"]
-    start = event["start"]
-    limit = event["limit"]
+    if "queryStringParameters" not in event:
+        return {
+            'statusCode': 400,
+            'body': 'Invalid request. Missing query parameters'
+        }
+    term = event["queryStringParameters"].get("term")
+    location_id = event["queryStringParameters"].get("locationId")
+    start = event["queryStringParameters"].get("start")
+    limit = event["queryStringParameters"].get("limit")
+    if not term or not location_id or "start" not in event["queryStringParameters"] or not limit:
+        return {
+            'statusCode': 400,
+            'body': 'Invalid request. Term, locationId, start, and limit are requered query parameters'
+        }
     auth_header = get_oauth_header()
     products_url = BASE_KROGER_URL + f"products?filter.term={term}&filter.locationId={location_id}&filter.start={start}&filter.limit={limit}"
     try:
@@ -188,7 +198,13 @@ def lambda_handler(event, context):
                                              limit=limit,
                                              products=products_response_json["data"],
                                              meta=products_response_json["meta"])
-        return products_response.to_dict()
+        return {
+            'statusCode': 200,
+            'body': json.dumps(products_response.to_dict()),
+            'headers': {
+                'Content-Type': 'application/json',
+            }
+        }
     
     print(f"Invalid products info from kroger {products_response_json}")
     return {

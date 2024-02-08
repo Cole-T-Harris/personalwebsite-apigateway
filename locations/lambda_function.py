@@ -143,9 +143,19 @@ def get_oauth_header():
 
 def lambda_handler(event, context):
     print("received event: " + json.dumps(event, indent=2))
-    zipcode = event["zipcode"]
-    radiusInMiles = event["radiusInMiles"]
-    limit = event["limit"]
+    if "queryStringParameters" not in event:
+        return {
+            'statusCode': 400,
+            'body': 'Invalid request. Missing query parameters'
+        }
+    zipcode = event["queryStringParameters"].get("zipcode")
+    radiusInMiles = event["queryStringParameters"].get("radiusInMiles")
+    limit = event["queryStringParameters"].get("limit")
+    if not zipcode or not radiusInMiles or not limit:
+        return {
+            'statusCode': 400,
+            'body': 'Invalid request. zipcode, radiusInMiles, and limit are requered query parameters'
+        }
     auth_header = get_oauth_header()
     locations_url = BASE_KROGER_URL + f"locations?filter.zipCode.near={zipcode}&filter.radiusInMiles={radiusInMiles}&filter.limit={limit}"
     try:
@@ -172,7 +182,14 @@ def lambda_handler(event, context):
                                             radiusInMiles=radiusInMiles,
                                             limit=limit,
                                             stores=stores_response_json['data'])
-        return locations_response.to_dict()
+        return {
+            'statusCode': 200,
+            'body': json.dumps(locations_response.to_dict()),
+            'headers': {
+                'Content-Type': 'application/json',
+            }
+        }
+    
     print(f"Invalid locations info from kroger {stores_response_json}")
     return {
             'statusCode': 500,
