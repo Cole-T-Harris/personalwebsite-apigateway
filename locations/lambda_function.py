@@ -172,6 +172,6 @@ def lambda_handler(event, context):
                                            radiusInMiles=radiusInMiles,
                                            limit=limit,
                                            stores=stores_response_json['data'])
-    return json.dumps(locations_response.to_dict())
+    return locations_response.to_dict()
 
 
