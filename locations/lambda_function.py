@@ -5,6 +5,7 @@ import requests
 import boto3
 import time
 import geopy.distance
+from geopy.geocoders import Nominatim
 
 BASE_KROGER_URL = "https://api.kroger.com/v1/"
 SCOPE = ''
@@ -90,6 +91,15 @@ def get_distance(store, zipcode_lat, zipcode_long):
     distance = geopy.distance.geodesic(starting_coordinates, store_coordinates).miles
     return distance
 
+def zipcode_to_lat_long(zipcode):
+    geolocator = Nominatim(user_agent="zipcode_converter")
+    location = geolocator.geocode(zipcode, country_codes='US')
+    if location:
+        latitude, longitude = location.latitude, location.longitude
+        return latitude, longitude
+    else:
+        return None
+
 def get_thumbnail(branch):
     if branch in THUMBNAILS:
         return THUMBNAILS[branch]
@@ -171,12 +181,13 @@ def lambda_handler(event, context):
         payload = {
             "zipcode": str(zipcode)
         }
-        zipcode_payload = make_lambda_request("zipcode-latlongcoords", payload)
+        zipcode_lat_long = zipcode_to_lat_long(zipcode=zipcode)
         for store in stores_response_json['data']:
-            if "statusCode" in zipcode_payload and zipcode_payload["statusCode"] == 200:
+            if zipcode_lat_long:
+                latitude, longitude = zipcode_lat_long
                 store["distance"] = get_distance(store=store, 
-                                                zipcode_lat=zipcode_payload["body"]["latitude"],
-                                                zipcode_long= zipcode_payload["body"]["longitude"])
+                                                zipcode_lat=latitude,
+                                                zipcode_long= longitude)
             store["thumbnail"] = get_thumbnail(store["chain"])
         locations_response = LocationsResponse(zipcode=zipcode,
                                             radiusInMiles=radiusInMiles,
